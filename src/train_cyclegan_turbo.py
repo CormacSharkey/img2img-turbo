@@ -21,6 +21,8 @@ from cyclegan_turbo import CycleGAN_Turbo, VAE_encode, VAE_decode, initialize_un
 from my_utils.training_utils import UnpairedDataset, build_transform, parse_args_unpaired_training
 from my_utils.dino_struct import DinoStructureLoss
 
+from torchvision.utils import save_image
+
 
 def main(args):
     accelerator = Accelerator(gradient_accumulation_steps=args.gradient_accumulation_steps, log_with=args.report_to)
@@ -163,6 +165,10 @@ def main(args):
             module.fused_attn = False
 
     for epoch in range(first_epoch, args.max_train_epochs):
+
+        os.mkdir("drive/MyDrive/MAI_Project/cycleGAN-turbo/source_code/img2img-turbo/training_outputs/day/epoch_" + str(epoch))
+        os.mkdir("drive/MyDrive/MAI_Project/cycleGAN-turbo/source_code/img2img-turbo/training_outputs/night/epoch_" + str(epoch))
+
         for step, batch in enumerate(train_dataloader):
             l_acc = [unet, net_disc_a, net_disc_b, vae_enc, vae_dec]
             with accelerator.accumulate(*l_acc):
@@ -200,6 +206,11 @@ def main(args):
                 """
                 fake_a = CycleGAN_Turbo.forward_with_networks(img_b, "b2a", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, fixed_b2a_emb)
                 fake_b = CycleGAN_Turbo.forward_with_networks(img_a, "a2b", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, fixed_a2b_emb)
+                
+                if (epoch+1 % 5 == 0):
+                    save_image(fake_a * 0.5 + 0.5, f"drive/MyDrive/MAI_Project/cycleGAN-turbo/source_code/img2img-turbo/training_outputs/day/epoch_{epoch}/day_epoch{epoch}_{step}.png")
+                    save_image(fake_b * 0.5 + 0.5, f"drive/MyDrive/MAI_Project/cycleGAN-turbo/source_code/img2img-turbo/training_outputs/night/epoch_{epoch}/night_epoch{epoch}_{step}.png")
+
                 loss_gan_a = net_disc_a(fake_b, for_G=True).mean() * args.lambda_gan
                 loss_gan_b = net_disc_b(fake_a, for_G=True).mean() * args.lambda_gan
                 accelerator.backward(loss_gan_a + loss_gan_b, retain_graph=False)
