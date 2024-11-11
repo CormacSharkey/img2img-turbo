@@ -25,6 +25,8 @@ from torchvision.utils import save_image
 
 
 def main(args):
+    torch.cuda.empty_cache()
+
     accelerator = Accelerator(gradient_accumulation_steps=args.gradient_accumulation_steps, log_with=args.report_to)
     set_seed(args.seed)
 
@@ -65,8 +67,11 @@ def main(args):
     vae_b2a = copy.deepcopy(vae_a2b)
     params_gen = CycleGAN_Turbo.get_traininable_params(unet, vae_a2b, vae_b2a)
 
+    torch.cuda.empty_cache()
     vae_enc = VAE_encode(vae_a2b, vae_b2a=vae_b2a)
+    torch.cuda.empty_cache()
     vae_dec = VAE_decode(vae_a2b, vae_b2a=vae_b2a)
+    torch.cuda.empty_cache()
 
     optimizer_gen = torch.optim.AdamW(params_gen, lr=args.learning_rate, betas=(args.adam_beta1, args.adam_beta2),
         weight_decay=args.adam_weight_decay, eps=args.adam_epsilon,)
@@ -154,6 +159,9 @@ def main(args):
 
     first_epoch = 0
     global_step = 0
+
+    temp_step = 0
+
     progress_bar = tqdm(range(0, args.max_train_steps), initial=global_step, desc="Steps",
         disable=not accelerator.is_local_main_process,)
     # turn off eff. attn for the disc
@@ -164,12 +172,20 @@ def main(args):
         if "attn" in name:
             module.fused_attn = False
 
-    for epoch in range(first_epoch, args.max_train_epochs):
+    print("MAX_TRAIN_EPOCHS: " + str(args.max_train_epochs) + "\n")
 
-        os.mkdir("drive/MyDrive/MAI_Project/cycleGAN-turbo/source_code/img2img-turbo/training_outputs/day/epoch_" + str(epoch))
-        os.mkdir("drive/MyDrive/MAI_Project/cycleGAN-turbo/source_code/img2img-turbo/training_outputs/night/epoch_" + str(epoch))
+    for epoch in range(first_epoch, args.max_train_epochs):
+        
+        print("\n Epoch: " + str(epoch+1) + "\n")
+        print("\n Epoch result: " + str(epoch+1 % 5) + "\n")
+
+        if (epoch+1 % 5 == 0):
+            os.mkdir("training_outputs/day/epoch_" + str(epoch))
+            os.mkdir("training_outputs/night/epoch_" + str(epoch))
 
         for step, batch in enumerate(train_dataloader):
+            torch.cuda.empty_cache()
+
             l_acc = [unet, net_disc_a, net_disc_b, vae_enc, vae_dec]
             with accelerator.accumulate(*l_acc):
                 img_a = batch["pixel_values_src"].to(dtype=weight_dtype)
@@ -208,8 +224,8 @@ def main(args):
                 fake_b = CycleGAN_Turbo.forward_with_networks(img_a, "a2b", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, fixed_a2b_emb)
                 
                 if (epoch+1 % 5 == 0):
-                    save_image(fake_a * 0.5 + 0.5, f"drive/MyDrive/MAI_Project/cycleGAN-turbo/source_code/img2img-turbo/training_outputs/day/epoch_{epoch}/day_epoch{epoch}_{step}.png")
-                    save_image(fake_b * 0.5 + 0.5, f"drive/MyDrive/MAI_Project/cycleGAN-turbo/source_code/img2img-turbo/training_outputs/night/epoch_{epoch}/night_epoch{epoch}_{step}.png")
+                    save_image(fake_a * 0.5 + 0.5, f"training_outputs/day/epoch_{epoch}/day_epoch{epoch}_{step}.png")
+                    save_image(fake_b * 0.5 + 0.5, f"training_outputs/night/epoch_{epoch}/night_epoch{epoch}_{step}.png")
 
                 loss_gan_a = net_disc_a(fake_b, for_G=True).mean() * args.lambda_gan
                 loss_gan_b = net_disc_b(fake_a, for_G=True).mean() * args.lambda_gan
@@ -279,6 +295,7 @@ def main(args):
             if accelerator.sync_gradients:
                 progress_bar.update(1)
                 global_step += 1
+                temp_step += 1
 
                 if accelerator.is_main_process:
                     eval_unet = accelerator.unwrap_model(unet)
@@ -299,9 +316,9 @@ def main(args):
                                 log_dict["train/fake_a"] = [wandb.Image(fake_a[idx].float().detach().cpu(), caption=f"idx={idx}") for idx in range(bsz)]
                                 tracker.log(log_dict)
                                 gc.collect()
-                                torch.cuda.empty_cache()
 
-                    if global_step % args.checkpointing_steps == 1:
+                    # if global_step % args.checkpointing_steps == 1:
+                    if global_step % 1 == 0:
                         outf = os.path.join(args.output_dir, "checkpoints", f"model_{global_step}.pkl")
                         sd = {}
                         sd["l_target_modules_encoder"] = l_modules_unet_encoder
@@ -317,10 +334,9 @@ def main(args):
                         sd["sd_vae_dec"] = eval_vae_dec.state_dict()
                         torch.save(sd, outf)
                         gc.collect()
-                        torch.cuda.empty_cache()
 
                     # compute val FID and DINO-Struct scores
-                    if global_step % args.validation_steps == 1:
+                    if global_step % args.validation_steps == -1:
                         _timesteps = torch.tensor([noise_scheduler_1step.config.num_train_timesteps - 1] * 1, device="cuda").long()
                         net_dino = DinoStructureLoss()
                         """
@@ -392,7 +408,8 @@ def main(args):
 
             progress_bar.set_postfix(**logs)
             accelerator.log(logs, step=global_step)
-            if global_step >= args.max_train_steps:
+            if temp_step >= args.max_train_steps:
+                temp_step = 0
                 break
 
 
