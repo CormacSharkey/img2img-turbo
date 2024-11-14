@@ -177,11 +177,11 @@ def main(args):
     for epoch in range(first_epoch, args.max_train_epochs):
         
         print("\n Epoch: " + str(epoch+1) + "\n")
-        print("\n Epoch result: " + str(epoch+1 % 5) + "\n")
+        # print("\n Epoch result: " + str(epoch+1 % 5) + "\n")
 
-        if (epoch+1 % 5 == 0):
-            os.mkdir("training_outputs/day/epoch_" + str(epoch))
-            os.mkdir("training_outputs/night/epoch_" + str(epoch))
+        # if (epoch+1 % 5 == 0):
+        #     os.mkdir("training_outputs/day/epoch_" + str(epoch))
+        #     os.mkdir("training_outputs/night/epoch_" + str(epoch))
 
         for step, batch in enumerate(train_dataloader):
             torch.cuda.empty_cache()
@@ -223,9 +223,9 @@ def main(args):
                 fake_a = CycleGAN_Turbo.forward_with_networks(img_b, "b2a", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, fixed_b2a_emb)
                 fake_b = CycleGAN_Turbo.forward_with_networks(img_a, "a2b", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, fixed_a2b_emb)
                 
-                if (epoch+1 % 5 == 0):
-                    save_image(fake_a * 0.5 + 0.5, f"training_outputs/day/epoch_{epoch}/day_epoch{epoch}_{step}.png")
-                    save_image(fake_b * 0.5 + 0.5, f"training_outputs/night/epoch_{epoch}/night_epoch{epoch}_{step}.png")
+                # if (epoch+1 % 5 == 0):
+                #     save_image(fake_a * 0.5 + 0.5, f"training_outputs/day/epoch_{epoch}/day_epoch{epoch}_{step}.png")
+                #     save_image(fake_b * 0.5 + 0.5, f"training_outputs/night/epoch_{epoch}/night_epoch{epoch}_{step}.png")
 
                 loss_gan_a = net_disc_a(fake_b, for_G=True).mean() * args.lambda_gan
                 loss_gan_b = net_disc_b(fake_a, for_G=True).mean() * args.lambda_gan
@@ -336,6 +336,7 @@ def main(args):
                         gc.collect()
 
                     # compute val FID and DINO-Struct scores
+                    # Code disabled wth -1 value due to memory limitations and because it's unnecessary
                     if global_step % args.validation_steps == -1:
                         _timesteps = torch.tensor([noise_scheduler_1step.config.num_train_timesteps - 1] * 1, device="cuda").long()
                         net_dino = DinoStructureLoss()
