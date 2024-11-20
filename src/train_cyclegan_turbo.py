@@ -316,9 +316,10 @@ def main(args):
                                 log_dict["train/fake_a"] = [wandb.Image(fake_a[idx].float().detach().cpu(), caption=f"idx={idx}") for idx in range(bsz)]
                                 tracker.log(log_dict)
                                 gc.collect()
+                                torch.cuda.empty_cache()
 
                     # if global_step % args.checkpointing_steps == 1:
-                    if global_step % 5 == 0:
+                    if global_step % 20 == 0:
                         outf = os.path.join(args.output_dir, "checkpoints", f"model_{global_step}.pkl")
                         sd = {}
                         sd["l_target_modules_encoder"] = l_modules_unet_encoder
@@ -334,83 +335,89 @@ def main(args):
                         sd["sd_vae_dec"] = eval_vae_dec.state_dict()
                         torch.save(sd, outf)
                         gc.collect()
+                        torch.cuda.empty_cache()
+                    
+                    gc.collect()
+
 
                     # compute val FID and DINO-Struct scores
                     # Code disabled wth -1 value due to memory limitations and because it's unnecessary
-                    if global_step % args.validation_steps == -1:
-                        _timesteps = torch.tensor([noise_scheduler_1step.config.num_train_timesteps - 1] * 1, device="cuda").long()
-                        net_dino = DinoStructureLoss()
-                        """
-                        Evaluate "A->B"
-                        """
-                        fid_output_dir = os.path.join(args.output_dir, f"fid-{global_step}/samples_a2b")
-                        os.makedirs(fid_output_dir, exist_ok=True)
-                        l_dino_scores_a2b = []
-                        # get val input images from domain a
-                        for idx, input_img_path in enumerate(tqdm(l_images_src_test)):
-                            if idx > args.validation_num_images and args.validation_num_images > 0:
-                                break
-                            outf = os.path.join(fid_output_dir, f"{idx}.png")
-                            with torch.no_grad():
-                                input_img = T_val(Image.open(input_img_path).convert("RGB"))
-                                img_a = transforms.ToTensor()(input_img)
-                                img_a = transforms.Normalize([0.5], [0.5])(img_a).unsqueeze(0).cuda()
-                                eval_fake_b = CycleGAN_Turbo.forward_with_networks(img_a, "a2b", eval_vae_enc, eval_unet,
-                                    eval_vae_dec, noise_scheduler_1step, _timesteps, fixed_a2b_emb[0:1])
-                                eval_fake_b_pil = transforms.ToPILImage()(eval_fake_b[0] * 0.5 + 0.5)
-                                eval_fake_b_pil.save(outf)
-                                a = net_dino.preprocess(input_img).unsqueeze(0).cuda()
-                                b = net_dino.preprocess(eval_fake_b_pil).unsqueeze(0).cuda()
-                                dino_ssim = net_dino.calculate_global_ssim_loss(a, b).item()
-                                l_dino_scores_a2b.append(dino_ssim)
-                        dino_score_a2b = np.mean(l_dino_scores_a2b)
-                        gen_features = get_folder_features(fid_output_dir, model=feat_model, num_workers=0, num=None,
-                            shuffle=False, seed=0, batch_size=8, device=torch.device("cuda"),
-                            mode="clean", custom_fn_resize=None, description="", verbose=True,
-                            custom_image_tranform=None)
-                        ed_mu, ed_sigma = np.mean(gen_features, axis=0), np.cov(gen_features, rowvar=False)
-                        score_fid_a2b = frechet_distance(a2b_ref_mu, a2b_ref_sigma, ed_mu, ed_sigma)
-                        print(f"step={global_step}, fid(a2b)={score_fid_a2b:.2f}, dino(a2b)={dino_score_a2b:.3f}")
+                    # if global_step % args.validation_steps == -1:
+                    #     _timesteps = torch.tensor([noise_scheduler_1step.config.num_train_timesteps - 1] * 1, device="cuda").long()
+                    #     net_dino = DinoStructureLoss()
+                    #     """
+                    #     Evaluate "A->B"
+                    #     """
+                    #     fid_output_dir = os.path.join(args.output_dir, f"fid-{global_step}/samples_a2b")
+                    #     os.makedirs(fid_output_dir, exist_ok=True)
+                    #     l_dino_scores_a2b = []
+                    #     # get val input images from domain a
+                    #     for idx, input_img_path in enumerate(tqdm(l_images_src_test)):
+                    #         if idx > args.validation_num_images and args.validation_num_images > 0:
+                    #             break
+                    #         outf = os.path.join(fid_output_dir, f"{idx}.png")
+                    #         with torch.no_grad():
+                    #             input_img = T_val(Image.open(input_img_path).convert("RGB"))
+                    #             img_a = transforms.ToTensor()(input_img)
+                    #             img_a = transforms.Normalize([0.5], [0.5])(img_a).unsqueeze(0).cuda()
+                    #             eval_fake_b = CycleGAN_Turbo.forward_with_networks(img_a, "a2b", eval_vae_enc, eval_unet,
+                    #                 eval_vae_dec, noise_scheduler_1step, _timesteps, fixed_a2b_emb[0:1])
+                    #             eval_fake_b_pil = transforms.ToPILImage()(eval_fake_b[0] * 0.5 + 0.5)
+                    #             eval_fake_b_pil.save(outf)
+                    #             a = net_dino.preprocess(input_img).unsqueeze(0).cuda()
+                    #             b = net_dino.preprocess(eval_fake_b_pil).unsqueeze(0).cuda()
+                    #             dino_ssim = net_dino.calculate_global_ssim_loss(a, b).item()
+                    #             l_dino_scores_a2b.append(dino_ssim)
+                    #     dino_score_a2b = np.mean(l_dino_scores_a2b)
+                    #     gen_features = get_folder_features(fid_output_dir, model=feat_model, num_workers=0, num=None,
+                    #         shuffle=False, seed=0, batch_size=8, device=torch.device("cuda"),
+                    #         mode="clean", custom_fn_resize=None, description="", verbose=True,
+                    #         custom_image_tranform=None)
+                    #     ed_mu, ed_sigma = np.mean(gen_features, axis=0), np.cov(gen_features, rowvar=False)
+                    #     score_fid_a2b = frechet_distance(a2b_ref_mu, a2b_ref_sigma, ed_mu, ed_sigma)
+                    #     print(f"step={global_step}, fid(a2b)={score_fid_a2b:.2f}, dino(a2b)={dino_score_a2b:.3f}")
 
-                        """
-                        compute FID for "B->A"
-                        """
-                        fid_output_dir = os.path.join(args.output_dir, f"fid-{global_step}/samples_b2a")
-                        os.makedirs(fid_output_dir, exist_ok=True)
-                        l_dino_scores_b2a = []
-                        # get val input images from domain b
-                        for idx, input_img_path in enumerate(tqdm(l_images_tgt_test)):
-                            if idx > args.validation_num_images and args.validation_num_images > 0:
-                                break
-                            outf = os.path.join(fid_output_dir, f"{idx}.png")
-                            with torch.no_grad():
-                                input_img = T_val(Image.open(input_img_path).convert("RGB"))
-                                img_b = transforms.ToTensor()(input_img)
-                                img_b = transforms.Normalize([0.5], [0.5])(img_b).unsqueeze(0).cuda()
-                                eval_fake_a = CycleGAN_Turbo.forward_with_networks(img_b, "b2a", eval_vae_enc, eval_unet,
-                                    eval_vae_dec, noise_scheduler_1step, _timesteps, fixed_b2a_emb[0:1])
-                                eval_fake_a_pil = transforms.ToPILImage()(eval_fake_a[0] * 0.5 + 0.5)
-                                eval_fake_a_pil.save(outf)
-                                a = net_dino.preprocess(input_img).unsqueeze(0).cuda()
-                                b = net_dino.preprocess(eval_fake_a_pil).unsqueeze(0).cuda()
-                                dino_ssim = net_dino.calculate_global_ssim_loss(a, b).item()
-                                l_dino_scores_b2a.append(dino_ssim)
-                        dino_score_b2a = np.mean(l_dino_scores_b2a)
-                        gen_features = get_folder_features(fid_output_dir, model=feat_model, num_workers=0, num=None,
-                            shuffle=False, seed=0, batch_size=8, device=torch.device("cuda"),
-                            mode="clean", custom_fn_resize=None, description="", verbose=True,
-                            custom_image_tranform=None)
-                        ed_mu, ed_sigma = np.mean(gen_features, axis=0), np.cov(gen_features, rowvar=False)
-                        score_fid_b2a = frechet_distance(b2a_ref_mu, b2a_ref_sigma, ed_mu, ed_sigma)
-                        print(f"step={global_step}, fid(b2a)={score_fid_b2a}, dino(b2a)={dino_score_b2a:.3f}")
-                        logs["val/fid_a2b"], logs["val/fid_b2a"] = score_fid_a2b, score_fid_b2a
-                        logs["val/dino_struct_a2b"], logs["val/dino_struct_b2a"] = dino_score_a2b, dino_score_b2a
-                        del net_dino  # free up memory
+                    #     """
+                    #     compute FID for "B->A"
+                    #     """
+                    #     fid_output_dir = os.path.join(args.output_dir, f"fid-{global_step}/samples_b2a")
+                    #     os.makedirs(fid_output_dir, exist_ok=True)
+                    #     l_dino_scores_b2a = []
+                    #     # get val input images from domain b
+                    #     for idx, input_img_path in enumerate(tqdm(l_images_tgt_test)):
+                    #         if idx > args.validation_num_images and args.validation_num_images > 0:
+                    #             break
+                    #         outf = os.path.join(fid_output_dir, f"{idx}.png")
+                    #         with torch.no_grad():
+                    #             input_img = T_val(Image.open(input_img_path).convert("RGB"))
+                    #             img_b = transforms.ToTensor()(input_img)
+                    #             img_b = transforms.Normalize([0.5], [0.5])(img_b).unsqueeze(0).cuda()
+                    #             eval_fake_a = CycleGAN_Turbo.forward_with_networks(img_b, "b2a", eval_vae_enc, eval_unet,
+                    #                 eval_vae_dec, noise_scheduler_1step, _timesteps, fixed_b2a_emb[0:1])
+                    #             eval_fake_a_pil = transforms.ToPILImage()(eval_fake_a[0] * 0.5 + 0.5)
+                    #             eval_fake_a_pil.save(outf)
+                    #             a = net_dino.preprocess(input_img).unsqueeze(0).cuda()
+                    #             b = net_dino.preprocess(eval_fake_a_pil).unsqueeze(0).cuda()
+                    #             dino_ssim = net_dino.calculate_global_ssim_loss(a, b).item()
+                    #             l_dino_scores_b2a.append(dino_ssim)
+                    #     dino_score_b2a = np.mean(l_dino_scores_b2a)
+                    #     gen_features = get_folder_features(fid_output_dir, model=feat_model, num_workers=0, num=None,
+                    #         shuffle=False, seed=0, batch_size=8, device=torch.device("cuda"),
+                    #         mode="clean", custom_fn_resize=None, description="", verbose=True,
+                    #         custom_image_tranform=None)
+                    #     ed_mu, ed_sigma = np.mean(gen_features, axis=0), np.cov(gen_features, rowvar=False)
+                    #     score_fid_b2a = frechet_distance(b2a_ref_mu, b2a_ref_sigma, ed_mu, ed_sigma)
+                    #     print(f"step={global_step}, fid(b2a)={score_fid_b2a}, dino(b2a)={dino_score_b2a:.3f}")
+                    #     logs["val/fid_a2b"], logs["val/fid_b2a"] = score_fid_a2b, score_fid_b2a
+                    #     logs["val/dino_struct_a2b"], logs["val/dino_struct_b2a"] = dino_score_a2b, dino_score_b2a
+                    #     del net_dino  # free up memory
 
             progress_bar.set_postfix(**logs)
             accelerator.log(logs, step=global_step)
             if temp_step >= args.max_train_steps:
                 temp_step = 0
+                torch.cuda.empty_cache()
+                gc.collect()
                 break
 
 
