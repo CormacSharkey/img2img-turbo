@@ -16,5 +16,5 @@ accelerate launch --main_process_port 29501 src/train_cyclegan_turbo.py \
 
 python src/inference_unpaired.py --model_path "training_outputs/checkpoints/model_1000.pkl" \
     --input_image "training_inputs/my_dayToNight/test_A/4.jpg" \
-    --prompt "cityscape view at nighttime" --direction "a2b" \
+    --prompt "a traffic junction in the shadown of a tall building surrounded by streetlights at night" --direction "a2b" \
     --output_dir "training_outputs/"
