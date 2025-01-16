@@ -13,11 +13,13 @@ from model import make_1step_sched, my_vae_encoder_fwd, my_vae_decoder_fwd, down
 
 
 class VAE_encode(nn.Module):
+    #! Need to change this method
     def __init__(self, vae, vae_b2a=None):
         super(VAE_encode, self).__init__()
         self.vae = vae
         self.vae_b2a = vae_b2a
 
+    #! Need to change this method
     def forward(self, x, direction):
         assert direction in ["a2b", "b2a"]
         if direction == "a2b":
@@ -28,11 +30,13 @@ class VAE_encode(nn.Module):
 
 
 class VAE_decode(nn.Module):
+    #! Need to change this method
     def __init__(self, vae, vae_b2a=None):
         super(VAE_decode, self).__init__()
         self.vae = vae
         self.vae_b2a = vae_b2a
 
+    #! Need to change this method
     def forward(self, x, direction):
         assert direction in ["a2b", "b2a"]
         if direction == "a2b":
@@ -195,7 +199,8 @@ class CycleGAN_Turbo(torch.nn.Module):
         download_url(url, outf)
         sd = torch.load(outf)
         self.load_ckpt_from_state_dict(sd)
-
+    
+    #! Need to change this method
     @staticmethod
     def forward_with_networks(x, direction, vae_enc, unet, vae_dec, sched, timesteps, text_emb):
         B = x.shape[0]
@@ -206,6 +211,7 @@ class CycleGAN_Turbo(torch.nn.Module):
         x_out_decoded = vae_dec(x_out, direction=direction)
         return x_out_decoded
 
+    #! Need to change this method
     @staticmethod
     def get_traininable_params(unet, vae_a2b, vae_b2a):
         # add all unet parameters
