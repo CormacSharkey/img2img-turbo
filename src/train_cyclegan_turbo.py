@@ -344,7 +344,7 @@ def main(args):
                                 torch.cuda.empty_cache()
 
                     # if global_step % args.checkpointing_steps == 1:
-                    if global_step % 1000 == 0:
+                    if global_step % 500 == 0:
                         outf = os.path.join(args.output_dir, "checkpoints", f"model_{global_step}.pkl")
                         sd = {}
                         sd["l_target_modules_encoder"] = l_modules_unet_encoder
