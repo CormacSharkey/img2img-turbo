@@ -38,18 +38,25 @@ def main(args):
     text_encoder = CLIPTextModel.from_pretrained("stabilityai/sd-turbo", subfolder="text_encoder").cuda()
 
     unet, l_modules_unet_encoder, l_modules_unet_decoder, l_modules_unet_others = initialize_unet(args.lora_rank_unet, return_lora_module_names=True)
+
+    #! Need to change this line
     vae_a2b, vae_lora_target_modules = initialize_vae(args.lora_rank_vae, return_lora_module_names=True)
 
     weight_dtype = torch.float32
+    #! Need to change this line
     vae_a2b.to(accelerator.device, dtype=weight_dtype)
     text_encoder.to(accelerator.device, dtype=weight_dtype)
     unet.to(accelerator.device, dtype=weight_dtype)
     text_encoder.requires_grad_(False)
 
     if args.gan_disc_type == "vagan_clip":
+        #! Need to change this line
         net_disc_a = vision_aided_loss.Discriminator(cv_type='clip', loss_type=args.gan_loss_type, device="cuda")
+        #! Need to change this line
         net_disc_a.cv_ensemble.requires_grad_(False)  # Freeze feature extractor
+        #! Need to change this line
         net_disc_b = vision_aided_loss.Discriminator(cv_type='clip', loss_type=args.gan_loss_type, device="cuda")
+        #! Need to change this line
         net_disc_b.cv_ensemble.requires_grad_(False)  # Freeze feature extractor
 
     crit_cycle, crit_idt = torch.nn.L1Loss(), torch.nn.L1Loss()
@@ -64,23 +71,30 @@ def main(args):
         torch.backends.cuda.matmul.allow_tf32 = True
 
     unet.conv_in.requires_grad_(True)
+    #! Need to change this line
     vae_b2a = copy.deepcopy(vae_a2b)
+    #! Need to change this line
     params_gen = CycleGAN_Turbo.get_traininable_params(unet, vae_a2b, vae_b2a)
 
     torch.cuda.empty_cache()
+    #! Need tp change this line
     vae_enc = VAE_encode(vae_a2b, vae_b2a=vae_b2a)
     torch.cuda.empty_cache()
+    #! Need to change this line
     vae_dec = VAE_decode(vae_a2b, vae_b2a=vae_b2a)
     torch.cuda.empty_cache()
 
     optimizer_gen = torch.optim.AdamW(params_gen, lr=args.learning_rate, betas=(args.adam_beta1, args.adam_beta2),
         weight_decay=args.adam_weight_decay, eps=args.adam_epsilon,)
 
+    #! Need to change this line
     params_disc = list(net_disc_a.parameters()) + list(net_disc_b.parameters())
     optimizer_disc = torch.optim.AdamW(params_disc, lr=args.learning_rate, betas=(args.adam_beta1, args.adam_beta2),
         weight_decay=args.adam_weight_decay, eps=args.adam_epsilon,)
 
+    #! Need to modify this underlying method
     dataset_train = UnpairedDataset(dataset_folder=args.dataset_folder, image_prep=args.train_img_prep, split="train", tokenizer=tokenizer)
+    #! Need to look at the underlying method
     train_dataloader = torch.utils.data.DataLoader(dataset_train, batch_size=args.train_batch_size, shuffle=True, num_workers=args.dataloader_num_workers)
     T_val = build_transform(args.val_img_prep)
     fixed_caption_src = dataset_train.fixed_caption_src
@@ -93,6 +107,7 @@ def main(args):
         l_images_tgt_test.extend(glob(os.path.join(args.dataset_folder, "test_B", ext)))
     l_images_src_test, l_images_tgt_test = sorted(l_images_src_test), sorted(l_images_tgt_test)
 
+    #! Need to see if this section is even necessary still??
     # make the reference FID statistics
     if accelerator.is_main_process:
         feat_model = build_feature_extractor("clean", "cuda", use_dataparallel=False)
@@ -131,6 +146,8 @@ def main(args):
                         custom_image_tranform=None)
         b2a_ref_mu, b2a_ref_sigma = np.mean(ref_features, axis=0), np.cov(ref_features, rowvar=False)
 
+
+
     lr_scheduler_gen = get_scheduler(args.lr_scheduler, optimizer=optimizer_gen,
         num_warmup_steps=args.lr_warmup_steps * accelerator.num_processes,
         num_training_steps=args.max_train_steps * accelerator.num_processes,
@@ -144,12 +161,17 @@ def main(args):
     net_lpips.cuda()
     net_lpips.requires_grad_(False)
 
+    #! Need to change this line
     fixed_a2b_tokens = tokenizer(fixed_caption_tgt, max_length=tokenizer.model_max_length, padding="max_length", truncation=True, return_tensors="pt").input_ids[0]
+    #! Need to change this line
     fixed_a2b_emb_base = text_encoder(fixed_a2b_tokens.cuda().unsqueeze(0))[0].detach()
+    #! Need to change this line
     fixed_b2a_tokens = tokenizer(fixed_caption_src, max_length=tokenizer.model_max_length, padding="max_length", truncation=True, return_tensors="pt").input_ids[0]
+    #! Need to change this line
     fixed_b2a_emb_base = text_encoder(fixed_b2a_tokens.cuda().unsqueeze(0))[0].detach()
     del text_encoder, tokenizer  # free up some memory
 
+    #! Need to change this line
     unet, vae_enc, vae_dec, net_disc_a, net_disc_b = accelerator.prepare(unet, vae_enc, vae_dec, net_disc_a, net_disc_b)
     net_lpips, optimizer_gen, optimizer_disc, train_dataloader, lr_scheduler_gen, lr_scheduler_disc = accelerator.prepare(
         net_lpips, optimizer_gen, optimizer_disc, train_dataloader, lr_scheduler_gen, lr_scheduler_disc
@@ -165,9 +187,11 @@ def main(args):
     progress_bar = tqdm(range(0, args.max_train_steps), initial=global_step, desc="Steps",
         disable=not accelerator.is_local_main_process,)
     # turn off eff. attn for the disc
+    #! Need to change this loop
     for name, module in net_disc_a.named_modules():
         if "attn" in name:
             module.fused_attn = False
+    #! Need to change this loop
     for name, module in net_disc_b.named_modules():
         if "attn" in name:
             module.fused_attn = False
@@ -177,7 +201,6 @@ def main(args):
     for epoch in range(first_epoch, args.max_train_epochs):
         
         print("\n Epoch: " + str(epoch+1) + "\n")
-        # print("\n Epoch result: " + str(epoch+1 % 5) + "\n")
 
         # if (epoch+1 % 5 == 0):
         #     os.mkdir("training_outputs/day/epoch_" + str(epoch))
@@ -186,15 +209,17 @@ def main(args):
         for step, batch in enumerate(train_dataloader):
             torch.cuda.empty_cache()
 
+            #! Need to change this line
             l_acc = [unet, net_disc_a, net_disc_b, vae_enc, vae_dec]
+            #! Need to change this block
             with accelerator.accumulate(*l_acc):
-                img_a = batch["pixel_values_src"].to(dtype=weight_dtype)
-                img_b = batch["pixel_values_tgt"].to(dtype=weight_dtype)
+                img_a = batch["pixel_values_src"].to(dtype=weight_dtype) #! Here
+                img_b = batch["pixel_values_tgt"].to(dtype=weight_dtype) #! Here
 
-                bsz = img_a.shape[0]
-                fixed_a2b_emb = fixed_a2b_emb_base.repeat(bsz, 1, 1).to(dtype=weight_dtype)
-                fixed_b2a_emb = fixed_b2a_emb_base.repeat(bsz, 1, 1).to(dtype=weight_dtype)
-                timesteps = torch.tensor([noise_scheduler_1step.config.num_train_timesteps - 1] * bsz, device=img_a.device).long()
+                bsz = img_a.shape[0] #! Here
+                fixed_a2b_emb = fixed_a2b_emb_base.repeat(bsz, 1, 1).to(dtype=weight_dtype) #! Here
+                fixed_b2a_emb = fixed_b2a_emb_base.repeat(bsz, 1, 1).to(dtype=weight_dtype) #! Here
+                timesteps = torch.tensor([noise_scheduler_1step.config.num_train_timesteps - 1] * bsz, device=img_a.device).long() #! Here
 
                 """
                 Cycle Objective
@@ -319,7 +344,7 @@ def main(args):
                                 torch.cuda.empty_cache()
 
                     # if global_step % args.checkpointing_steps == 1:
-                    if global_step % 100 == 0:
+                    if global_step % 500 == 0:
                         outf = os.path.join(args.output_dir, "checkpoints", f"model_{global_step}.pkl")
                         sd = {}
                         sd["l_target_modules_encoder"] = l_modules_unet_encoder
