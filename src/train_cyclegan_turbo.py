@@ -59,6 +59,8 @@ def main(args):
         #! Need to change this line
         net_disc_b.cv_ensemble.requires_grad_(False)  # Freeze feature extractor
 
+    #* Instantiate new Discriminator here
+
     crit_cycle, crit_idt = torch.nn.L1Loss(), torch.nn.L1Loss()
 
     if args.enable_xformers_memory_efficient_attention:
@@ -179,7 +181,6 @@ def main(args):
     if accelerator.is_main_process:
         accelerator.init_trackers(args.tracker_project_name, config=dict(vars(args)))
 
-    first_epoch = 0
     global_step = 0
 
     temp_step = 0
@@ -198,13 +199,9 @@ def main(args):
 
     print("MAX_TRAIN_EPOCHS: " + str(args.max_train_epochs) + "\n")
 
-    for epoch in range(first_epoch, args.max_train_epochs):
+    for epoch in range(1, args.max_train_epochs+1):
         
-        print("\n Epoch: " + str(epoch+1) + "\n")
-
-        # if (epoch+1 % 5 == 0):
-        #     os.mkdir("training_outputs/day/epoch_" + str(epoch))
-        #     os.mkdir("training_outputs/night/epoch_" + str(epoch))
+        print("\n Epoch: " + str(epoch) + "\n")
 
         for step, batch in enumerate(train_dataloader):
             torch.cuda.empty_cache()
@@ -248,10 +245,6 @@ def main(args):
                 fake_a = CycleGAN_Turbo.forward_with_networks(img_b, "b2a", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, fixed_b2a_emb)
                 fake_b = CycleGAN_Turbo.forward_with_networks(img_a, "a2b", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, fixed_a2b_emb)
                 
-                # if (epoch+1 % 5 == 0):
-                #     save_image(fake_a * 0.5 + 0.5, f"training_outputs/day/epoch_{epoch}/day_epoch{epoch}_{step}.png")
-                #     save_image(fake_b * 0.5 + 0.5, f"training_outputs/night/epoch_{epoch}/night_epoch{epoch}_{step}.png")
-
                 loss_gan_a = net_disc_a(fake_b, for_G=True).mean() * args.lambda_gan
                 loss_gan_b = net_disc_b(fake_a, for_G=True).mean() * args.lambda_gan
                 accelerator.backward(loss_gan_a + loss_gan_b, retain_graph=False)
@@ -344,7 +337,7 @@ def main(args):
                                 torch.cuda.empty_cache()
 
                     # if global_step % args.checkpointing_steps == 1:
-                    if global_step % 500 == 0:
+                    if global_step % 75 == 0:
                         outf = os.path.join(args.output_dir, "checkpoints", f"model_{global_step}.pkl")
                         sd = {}
                         sd["l_target_modules_encoder"] = l_modules_unet_encoder
